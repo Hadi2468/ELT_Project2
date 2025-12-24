@@ -51,40 +51,58 @@ FILES = [
 # =====================
 def download_drive_file_to_s3(file_id, s3_key):
     """Download a Google Drive file and upload it to S3."""
-    request = drive_service.files().get_media(fileId=file_id)
-    fh = io.BytesIO()
-    downloader = MediaIoBaseDownload(fh, request)
-    done = False
+    try:
+        request = drive_service.files().get_media(fileId=file_id)
+        fh = io.BytesIO()
+        downloader = MediaIoBaseDownload(fh, request)
+        done = False
 
-    while not done:
-        status, done = downloader.next_chunk()
+        while not done:
+            status, done = downloader.next_chunk()
 
-    fh.seek(0)
-    s3_client.upload_fileobj(fh, BRONZE_BUCKET, s3_key)
-    print(f"Uploaded {s3_key} to s3://{BRONZE_BUCKET}/")
+        fh.seek(0)
+        s3_client.upload_fileobj(fh, BRONZE_BUCKET, s3_key)
+
+        print(f"✅ Uploaded {s3_key} to s3://{BRONZE_BUCKET}/")
+
+    except Exception as e:
+        print(f"❌ Error downloading/uploading file {file_id} → {s3_key}: {str(e)}")
+        raise
+
 
 # =====================
 # Lambda Handler
 # =====================
 def lambda_handler(event, context):
+    print("Starting Google Drive → S3 ingestion")
+
     try:
-        print("Starting Google Drive → S3 ingestion")
-
+        # =====================
         # Upload all files
+        # =====================
         for file in FILES:
-            download_drive_file_to_s3(file["file_id"], file["s3_key"])
+            download_drive_file_to_s3(
+                file["file_id"],
+                file["s3_key"]
+            )
 
-        print("All files uploaded successfully")
+        print("✅ All files uploaded successfully")
 
-        # Trigger Glue Workflow to run 3 jobs
-        response = glue_client.start_workflow_run(
-            Name="project2-bronze-silver-gold",
-            RunProperties={
-                "input_path": f"s3://{BRONZE_BUCKET}/raw-data/"
-            }
-        )
+        # =====================
+        # Trigger Glue Workflow
+        # =====================
+        try:
+            response = glue_client.start_workflow_run(
+                Name="project2-bronze-silver-gold",
+                RunProperties={
+                    "input_path": f"s3://{BRONZE_BUCKET}/raw-data/"
+                }
+            )
+            print(f"✅ Glue workflow triggered: {response['RunId']}")
 
-        print(f"Glue workflow triggered: {response['RunId']}")
+        except Exception as glue_error:
+            print(f"❌ Failed to trigger Glue workflow: {str(glue_error)}")
+            raise
 
         return {
             "statusCode": 200,
@@ -92,7 +110,7 @@ def lambda_handler(event, context):
         }
 
     except Exception as e:
-        print(f"Error occurred: {str(e)}")
+        print(f"❌ Lambda execution failed: {str(e)}")
         return {
             "statusCode": 500,
             "body": str(e)

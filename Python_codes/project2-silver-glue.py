@@ -16,7 +16,7 @@ job = Job(glueContext)
 job.init(args['JOB_NAME'], args)
 
 INPUT_PATH = args['input_path']  # Passed from Lambda
-BRONZE_BUCKET = INPUT_PATH  # Can use to read all files dynamically
+BRONZE_BUCKET = INPUT_PATH
 
 # ----------------------------------------------------
 # Helper function to normalize column names
@@ -29,95 +29,100 @@ def normalize_columns(df):
         )
     return df
 
-# ====================================================
-# FACT TABLE
-# ====================================================
-# Read all files matching pattern
-fact_input_path = f"{BRONZE_BUCKET}PBJ_Daily_Nurse_Staffing_Q2_2024.csv"
-fact_output_path = "s3://project2-healthcare-silver-bucket/fact/fact_table/"
+try:
+    # ====================================================
+    # FACT TABLE
+    # ====================================================
+    print("Reading FACT CSV from bronze bucket")
 
-fact_df = (
-    spark.read
-    .option("header", True)
-    .option("inferSchema", True)
-    .csv(fact_input_path)
-)
+    fact_input_path = f"{BRONZE_BUCKET}PBJ_Daily_Nurse_Staffing_Q2_2024.csv"
+    fact_output_path = "s3://project2-healthcare-silver-bucket/fact/fact_table/"
 
-# Drop unwanted columns
-fact_df = fact_df.drop("COUNTY_NAME", "COUNTY_FIPS", "CY_Qtr")
+    fact_df = (
+        spark.read
+        .option("header", True)
+        .option("inferSchema", True)
+        .csv(fact_input_path)
+    )
 
-# Normalize column names
-fact_df = normalize_columns(fact_df)
+    print("Cleaning FACT data")
+    fact_df = fact_df.drop("COUNTY_NAME", "COUNTY_FIPS", "CY_Qtr")
+    fact_df = normalize_columns(fact_df)
 
-# Write as Parquet
-(
-    fact_df
-    .write
-    .mode("overwrite")
-    .parquet(fact_output_path)
-)
+    print("Writing FACT table to silver bucket")
+    (
+        fact_df
+        .write
+        .mode("overwrite")
+        .parquet(fact_output_path)
+    )
 
-# ====================================================
-# DIM TABLE
-# ====================================================
-dim_input_path = f"{BRONZE_BUCKET}NH_ProviderInfo_Oct2024.csv"
-dim_output_path = "s3://project2-healthcare-silver-bucket/dim/dim_table/"
+    # ====================================================
+    # DIM TABLE
+    # ====================================================
+    print("Reading DIM CSV from bronze bucket")
 
-dim_columns = [
-    "CMS Certification Number (CCN)",
-    "Provider Name",
-    "Provider Type",
-    "State",
-    "City/Town",
-    "ZIP Code",
-    "Number of Certified Beds",
-    "Average Number of Residents per Day",
-    "Average Number of Residents per Day Footnote",
-    "Reported Nurse Aide Staffing Hours per Resident per Day",
-    "Reported LPN Staffing Hours per Resident per Day",
-    "Reported RN Staffing Hours per Resident per Day",
-    "Reported Licensed Staffing Hours per Resident per Day",
-    "Reported Total Nurse Staffing Hours per Resident per Day",
-    "Total number of nurse staff hours per resident per day on the weekend",
-    "Registered Nurse hours per resident per day on the weekend",
-    "Reported Physical Therapist Staffing Hours per Resident Per Day",
-    "Total nursing staff turnover",
-    "Total nursing staff turnover footnote",
-    "Registered Nurse turnover",
-    "Registered Nurse turnover footnote",
-    "Number of administrators who have left the nursing home",
-    "Administrator turnover footnote"
-]
+    dim_input_path = f"{BRONZE_BUCKET}NH_ProviderInfo_Oct2024.csv"
+    dim_output_path = "s3://project2-healthcare-silver-bucket/dim/dim_table/"
 
-dim_df = (
-    spark.read
-    .option("header", True)
-    .option("inferSchema", True)
-    .csv(dim_input_path)
-)
+    dim_columns = [
+        "CMS Certification Number (CCN)",
+        "Provider Name",
+        "Provider Type",
+        "State",
+        "City/Town",
+        "ZIP Code",
+        "Number of Certified Beds",
+        "Average Number of Residents per Day",
+        "Average Number of Residents per Day Footnote",
+        "Reported Nurse Aide Staffing Hours per Resident per Day",
+        "Reported LPN Staffing Hours per Resident per Day",
+        "Reported RN Staffing Hours per Resident per Day",
+        "Reported Licensed Staffing Hours per Resident per Day",
+        "Reported Total Nurse Staffing Hours per Resident per Day",
+        "Total number of nurse staff hours per resident per day on the weekend",
+        "Registered Nurse hours per resident per day on the weekend",
+        "Reported Physical Therapist Staffing Hours per Resident Per Day",
+        "Total nursing staff turnover",
+        "Total nursing staff turnover footnote",
+        "Registered Nurse turnover",
+        "Registered Nurse turnover footnote",
+        "Number of administrators who have left the nursing home",
+        "Administrator turnover footnote"
+    ]
 
-# Select required columns
-dim_df = dim_df.select(*dim_columns)
+    dim_df = (
+        spark.read
+        .option("header", True)
+        .option("inferSchema", True)
+        .csv(dim_input_path)
+    )
 
-# Rename specific columns
-dim_df = (
-    dim_df
-    .withColumnRenamed("CMS Certification Number (CCN)", "Provider_num")
-    .withColumnRenamed("City/Town", "CITY_TOWN")
-)
+    print("Selecting and normalizing DIM columns")
+    dim_df = dim_df.select(*dim_columns)
 
-# Normalize column names
-dim_df = normalize_columns(dim_df)
+    dim_df = (
+        dim_df
+        .withColumnRenamed("CMS Certification Number (CCN)", "Provider_num")
+        .withColumnRenamed("City/Town", "CITY_TOWN")
+    )
 
-# Write as Parquet
-(
-    dim_df
-    .write
-    .mode("overwrite")
-    .parquet(dim_output_path)
-)
+    dim_df = normalize_columns(dim_df)
 
-# ====================================================
-# Finish Glue Job
-# ====================================================
-job.commit()
+    print("Writing DIM table to silver bucket")
+    (
+        dim_df
+        .write
+        .mode("overwrite")
+        .parquet(dim_output_path)
+    )
+
+    # ====================================================
+    # Commit job
+    # ====================================================
+    job.commit()
+    print("✅ Bronze → Silver Glue job completed successfully")
+
+except Exception as e:
+    print(f"❌ Bronze → Silver Glue job failed: {str(e)}")
+    raise

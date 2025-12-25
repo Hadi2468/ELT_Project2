@@ -4,6 +4,13 @@ from awsglue.context import GlueContext
 from awsglue.job import Job
 from awsglue.utils import getResolvedOptions
 from pyspark.sql.functions import col
+import logging
+
+# ----------------------------------------------------
+# Setup logging
+# ----------------------------------------------------
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
 
 # ----------------------------------------------------
 # Glue setup
@@ -23,18 +30,14 @@ BRONZE_BUCKET = INPUT_PATH
 # ----------------------------------------------------
 def normalize_columns(df):
     for c in df.columns:
-        df = df.withColumnRenamed(
-            c,
-            c.upper().replace(" ", "_")
-        )
+        df = df.withColumnRenamed(c, c.upper().replace(" ", "_"))
     return df
 
 try:
     # ====================================================
     # FACT TABLE
     # ====================================================
-    print("Reading FACT CSV from bronze bucket")
-
+    logger.info("Reading FACT CSV from bronze bucket")
     fact_input_path = f"{BRONZE_BUCKET}PBJ_Daily_Nurse_Staffing_Q2_2024.csv"
     fact_output_path = "s3://project2-healthcare-silver-bucket/fact/fact_table/"
 
@@ -45,23 +48,17 @@ try:
         .csv(fact_input_path)
     )
 
-    print("Cleaning FACT data")
+    logger.info("Cleaning FACT data")
     fact_df = fact_df.drop("COUNTY_NAME", "COUNTY_FIPS", "CY_Qtr")
     fact_df = normalize_columns(fact_df)
 
-    print("Writing FACT table to silver bucket")
-    (
-        fact_df
-        .write
-        .mode("overwrite")
-        .parquet(fact_output_path)
-    )
+    logger.info("Writing FACT table to silver bucket")
+    fact_df.write.mode("overwrite").parquet(fact_output_path)
 
     # ====================================================
     # DIM TABLE
     # ====================================================
-    print("Reading DIM CSV from bronze bucket")
-
+    logger.info("Reading DIM CSV from bronze bucket")
     dim_input_path = f"{BRONZE_BUCKET}NH_ProviderInfo_Oct2024.csv"
     dim_output_path = "s3://project2-healthcare-silver-bucket/dim/dim_table/"
 
@@ -98,31 +95,23 @@ try:
         .csv(dim_input_path)
     )
 
-    print("Selecting and normalizing DIM columns")
+    logger.info("Selecting required DIM columns")
     dim_df = dim_df.select(*dim_columns)
 
-    dim_df = (
-        dim_df
-        .withColumnRenamed("CMS Certification Number (CCN)", "Provider_num")
-        .withColumnRenamed("City/Town", "CITY_TOWN")
-    )
-
+    logger.info("Renaming and normalizing DIM columns")
+    dim_df = dim_df.withColumnRenamed("CMS Certification Number (CCN)", "Provider_num") \
+                   .withColumnRenamed("City/Town", "CITY_TOWN")
     dim_df = normalize_columns(dim_df)
 
-    print("Writing DIM table to silver bucket")
-    (
-        dim_df
-        .write
-        .mode("overwrite")
-        .parquet(dim_output_path)
-    )
+    logger.info("Writing DIM table to silver bucket")
+    dim_df.write.mode("overwrite").parquet(dim_output_path)
 
     # ====================================================
     # Commit job
     # ====================================================
     job.commit()
-    print("✅ Bronze → Silver Glue job completed successfully")
+    logger.info("✅ Bronze → Silver Glue job completed successfully")
 
 except Exception as e:
-    print(f"❌ Bronze → Silver Glue job failed: {str(e)}")
+    logger.error(f"❌ Bronze → Silver Glue job failed: {str(e)}")
     raise

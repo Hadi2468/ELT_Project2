@@ -2,9 +2,16 @@ import os
 import boto3
 import io
 import json
+import logging
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
+
+# =====================
+# Setup logging
+# =====================
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
 
 # =====================
 # Environment Variables
@@ -23,7 +30,6 @@ credentials = service_account.Credentials.from_service_account_info(
     scopes=["https://www.googleapis.com/auth/drive.readonly"]
 )
 
-# Initialize Google Drive API
 drive_service = build("drive", "v3", credentials=credentials)
 
 # =====================
@@ -52,6 +58,7 @@ FILES = [
 def download_drive_file_to_s3(file_id, s3_key):
     """Download a Google Drive file and upload it to S3."""
     try:
+        logger.info(f"Starting download: {file_id} → {s3_key}")
         request = drive_service.files().get_media(fileId=file_id)
         fh = io.BytesIO()
         downloader = MediaIoBaseDownload(fh, request)
@@ -59,49 +66,43 @@ def download_drive_file_to_s3(file_id, s3_key):
 
         while not done:
             status, done = downloader.next_chunk()
+            if status:
+                logger.info(f"Download progress: {int(status.progress() * 100)}%")
 
         fh.seek(0)
         s3_client.upload_fileobj(fh, BRONZE_BUCKET, s3_key)
-
-        print(f"✅ Uploaded {s3_key} to s3://{BRONZE_BUCKET}/")
+        logger.info(f"✅ Uploaded {s3_key} to s3://{BRONZE_BUCKET}/")
 
     except Exception as e:
-        print(f"❌ Error downloading/uploading file {file_id} → {s3_key}: {str(e)}")
+        logger.error(f"❌ Error downloading/uploading file {file_id} → {s3_key}: {str(e)}")
         raise
-
 
 # =====================
 # Lambda Handler
 # =====================
 def lambda_handler(event, context):
-    print("Starting Google Drive → S3 ingestion")
+    logger.info("Starting Google Drive → S3 ingestion")
 
     try:
-        # =====================
         # Upload all files
-        # =====================
         for file in FILES:
-            download_drive_file_to_s3(
-                file["file_id"],
-                file["s3_key"]
-            )
+            download_drive_file_to_s3(file["file_id"], file["s3_key"])
 
-        print("✅ All files uploaded successfully")
+        logger.info("✅ All files uploaded successfully")
 
-        # =====================
         # Trigger Glue Workflow
-        # =====================
         try:
+            logger.info("Triggering Glue workflow")
             response = glue_client.start_workflow_run(
                 Name="project2-bronze-silver-gold",
                 RunProperties={
                     "input_path": f"s3://{BRONZE_BUCKET}/raw-data/"
                 }
             )
-            print(f"✅ Glue workflow triggered: {response['RunId']}")
+            logger.info(f"✅ Glue workflow triggered: {response['RunId']}")
 
         except Exception as glue_error:
-            print(f"❌ Failed to trigger Glue workflow: {str(glue_error)}")
+            logger.error(f"❌ Failed to trigger Glue workflow: {str(glue_error)}")
             raise
 
         return {
@@ -110,7 +111,7 @@ def lambda_handler(event, context):
         }
 
     except Exception as e:
-        print(f"❌ Lambda execution failed: {str(e)}")
+        logger.error(f"❌ Lambda execution failed: {str(e)}")
         return {
             "statusCode": 500,
             "body": str(e)

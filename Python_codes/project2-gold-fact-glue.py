@@ -3,9 +3,14 @@ from awsglue.utils import getResolvedOptions
 from awsglue.context import GlueContext
 from awsglue.job import Job
 from pyspark.context import SparkContext
-from pyspark.sql.functions import (
-    col, expr, when, round, to_date, year, month, dayofmonth
-)
+from pyspark.sql.functions import col, expr, round, to_date, year, month, dayofmonth
+import logging
+
+# ---------------------------------------------------
+# Setup logging
+# ---------------------------------------------------
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)  # Change to DEBUG for more detailed logs
 
 # ---------------------------------------------------
 # Glue boilerplate
@@ -21,15 +26,13 @@ try:
     # ---------------------------------------------------
     # Read source fact_table
     # ---------------------------------------------------
-    print("Reading fact_table from silver bucket")
-    fact_df = spark.read.parquet(
-        "s3://project2-healthcare-silver-bucket/fact/fact_table/"
-    )
+    logger.info("Reading fact_table from silver bucket")
+    fact_df = spark.read.parquet("s3://project2-healthcare-silver-bucket/fact/fact_table/")
 
     # ===================================================
     # BUILD fact_staff
     # ===================================================
-    print("Building fact_staff")
+    logger.info("Building fact_staff")
     staff_df = fact_df.select(
         col('PROVNUM'),
         col('PROVNAME'),
@@ -56,119 +59,78 @@ try:
     ).withColumn(
         'WORKDATE',
         to_date(col('WORKDATE').cast('string'), 'yyyyMMdd')
-    ).withColumn(
-        'WORKYEAR',
-        year('WORKDATE')
-    ).withColumn(
-        'WORKMONTH',
-        month('WORKDATE')
-    ).withColumn(
-        'WORKDAY',
-        dayofmonth('WORKDATE')
-    ).withColumn(
-        'STAFF_RATIO_RNDON',
-        expr("""
-            CASE 
-                WHEN HRS_RNDON_CTR < 1e-3 THEN 10000
-                ELSE HRS_RNDON_EMP / HRS_RNDON_CTR
-            END
-        """)
-    ).withColumn(
-        'STAFF_RATIO_RNDON',
-        round(col('STAFF_RATIO_RNDON'), 2)
-    ).withColumn(
-        'STAFF_RATIO_RNADMIN',
-        expr("""
-            CASE 
-                WHEN HRS_RNADMIN_CTR < 1e-3 THEN 10000
-                ELSE HRS_RNADMIN_EMP / HRS_RNADMIN_CTR
-            END
-        """)
-    ).withColumn(
-        'STAFF_RATIO_RNADMIN',
-        round(col('STAFF_RATIO_RNADMIN'), 2)
-    ).withColumn(
-        'STAFF_RATIO_RN',
-        expr("""
-            CASE 
-                WHEN HRS_RN_CTR < 1e-3 THEN 10000
-                ELSE HRS_RN_EMP / HRS_RN_CTR
-            END
-        """)
-    ).withColumn(
-        'STAFF_RATIO_RN',
-        round(col('STAFF_RATIO_RN'), 2)
-    ).withColumn(
-        'STAFF_RATIO_LPNADMIN',
-        expr("""
-            CASE 
-                WHEN HRS_LPNADMIN_CTR < 1e-3 THEN 10000
-                ELSE HRS_LPNADMIN_EMP / HRS_LPNADMIN_CTR
-            END
-        """)
-    ).withColumn(
-        'STAFF_RATIO_LPNADMIN',
-        round(col('STAFF_RATIO_LPNADMIN'), 2)
-    ).withColumn(
-        'STAFF_RATIO_LPN',
-        expr("""
-            CASE 
-                WHEN HRS_LPN_CTR < 1e-3 THEN 10000
-                ELSE HRS_LPN_EMP / HRS_LPN_CTR
-            END
-        """)
-    ).withColumn(
-        'STAFF_RATIO_LPN',
-        round(col('STAFF_RATIO_LPN'), 2)
-    ).withColumn(
-        'STAFF_RATIO_CNA',
-        expr("""
-            CASE 
-                WHEN HRS_CNA_CTR < 1e-3 THEN 10000
-                ELSE HRS_CNA_EMP / HRS_CNA_CTR
-            END
-        """)
-    ).withColumn(
-        'STAFF_RATIO_CNA',
-        round(col('STAFF_RATIO_CNA'), 2)
-    ).withColumn(
-        'STAFF_RATIO_NATRN',
-        expr("""
-            CASE 
-                WHEN HRS_NATRN_CTR < 1e-3 THEN 10000
-                ELSE HRS_NATRN_EMP / HRS_NATRN_CTR
-            END
-        """)
-    ).withColumn(
-        'STAFF_RATIO_NATRN',
-        round(col('STAFF_RATIO_NATRN'), 2)
-    ).withColumn(
-        'STAFF_RATIO_MEDAIDE',
-        expr("""
-            CASE 
-                WHEN HRS_MEDAIDE_CTR < 1e-3 THEN 10000
-                ELSE HRS_MEDAIDE_EMP / HRS_MEDAIDE_CTR
-            END
-        """)
-    ).withColumn(
-        'STAFF_RATIO_MEDAIDE',
-        round(col('STAFF_RATIO_MEDAIDE'), 2)
-    )
+    ).withColumn('WORKYEAR', year('WORKDATE')) \
+     .withColumn('WORKMONTH', month('WORKDATE')) \
+     .withColumn('WORKDAY', dayofmonth('WORKDATE')) \
+     .withColumn('STAFF_RATIO_RNDON', expr("""
+         CASE 
+             WHEN HRS_RNDON_CTR < 1e-3 THEN 10000
+             ELSE HRS_RNDON_EMP / HRS_RNDON_CTR
+         END
+     """)) \
+     .withColumn('STAFF_RATIO_RNDON', round(col('STAFF_RATIO_RNDON'), 2)) \
+     .withColumn('STAFF_RATIO_RNADMIN', expr("""
+         CASE 
+             WHEN HRS_RNADMIN_CTR < 1e-3 THEN 10000
+             ELSE HRS_RNADMIN_EMP / HRS_RNADMIN_CTR
+         END
+     """)) \
+     .withColumn('STAFF_RATIO_RNADMIN', round(col('STAFF_RATIO_RNADMIN'), 2)) \
+     .withColumn('STAFF_RATIO_RN', expr("""
+         CASE 
+             WHEN HRS_RN_CTR < 1e-3 THEN 10000
+             ELSE HRS_RN_EMP / HRS_RN_CTR
+         END
+     """)) \
+     .withColumn('STAFF_RATIO_RN', round(col('STAFF_RATIO_RN'), 2)) \
+     .withColumn('STAFF_RATIO_LPNADMIN', expr("""
+         CASE 
+             WHEN HRS_LPNADMIN_CTR < 1e-3 THEN 10000
+             ELSE HRS_LPNADMIN_EMP / HRS_LPNADMIN_CTR
+         END
+     """)) \
+     .withColumn('STAFF_RATIO_LPNADMIN', round(col('STAFF_RATIO_LPNADMIN'), 2)) \
+     .withColumn('STAFF_RATIO_LPN', expr("""
+         CASE 
+             WHEN HRS_LPN_CTR < 1e-3 THEN 10000
+             ELSE HRS_LPN_EMP / HRS_LPN_CTR
+         END
+     """)) \
+     .withColumn('STAFF_RATIO_LPN', round(col('STAFF_RATIO_LPN'), 2)) \
+     .withColumn('STAFF_RATIO_CNA', expr("""
+         CASE 
+             WHEN HRS_CNA_CTR < 1e-3 THEN 10000
+             ELSE HRS_CNA_EMP / HRS_CNA_CTR
+         END
+     """)) \
+     .withColumn('STAFF_RATIO_CNA', round(col('STAFF_RATIO_CNA'), 2)) \
+     .withColumn('STAFF_RATIO_NATRN', expr("""
+         CASE 
+             WHEN HRS_NATRN_CTR < 1e-3 THEN 10000
+             ELSE HRS_NATRN_EMP / HRS_NATRN_CTR
+         END
+     """)) \
+     .withColumn('STAFF_RATIO_NATRN', round(col('STAFF_RATIO_NATRN'), 2)) \
+     .withColumn('STAFF_RATIO_MEDAIDE', expr("""
+         CASE 
+             WHEN HRS_MEDAIDE_CTR < 1e-3 THEN 10000
+             ELSE HRS_MEDAIDE_EMP / HRS_MEDAIDE_CTR
+         END
+     """)) \
+     .withColumn('STAFF_RATIO_MEDAIDE', round(col('STAFF_RATIO_MEDAIDE'), 2))
 
     # ---------------------------------------------------
     # Write fact_staff
     # ---------------------------------------------------
-    print("Writing fact_staff to gold bucket")
-    staff_df.write.mode("overwrite").parquet(
-        "s3://project2-healthcare-gold-bucket/fact_staff/"
-    )
+    logger.info("Writing fact_staff to gold bucket")
+    staff_df.write.mode("overwrite").parquet("s3://project2-healthcare-gold-bucket/fact_staff/")
 
     # ---------------------------------------------------
     # Commit job
     # ---------------------------------------------------
     job.commit()
-    print("✅ fact_staff Glue job completed successfully")
+    logger.info("✅ fact_staff Glue job completed successfully")
 
 except Exception as e:
-    print(f"❌ fact_staff Glue job failed: {str(e)}")
+    logger.error(f"❌ fact_staff Glue job failed: {str(e)}")
     raise
